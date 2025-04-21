@@ -45,23 +45,30 @@ st.image("https://upload.wikimedia.org/wikipedia/commons/7/75/Netflix_icon.svg",
 st.title("🍿 Netflix İçerik Öneri Sistemi")
 st.markdown("🎯 3 farklı yolla içerik önerisi alabilirsiniz: rastgele içerikler, popüler türler veya başlık arama.")
 
-# --- INITIAL STATE TANIMI ---
-for key in ['genre_recommendations', 'search_recommendations', 'random_recommendations', 'genre_selected']:
+# --- SESSION STATE TANIMI ---
+for key in ['genre_recommendations', 'search_recommendations', 'random_recommendations',
+            'genre_selected', 'user_input', 'last_selected', 'user_input_saved']:
     if key not in st.session_state:
         st.session_state[key] = None
 
-# --- 🎲 RASTGELE 5 İÇERİK (default seçimsiz) ---
+# --- 🎲 RASTGELE İÇERİK SEÇİMİ ---
 st.subheader("🎲 Bugünlük Rastgele Seçimler")
 random_titles = ["Seçiniz..."] + df['title'].sample(5, random_state=42).tolist()
 selected_random = st.radio("Bir başlık seçin ve önerileri görün:", random_titles, horizontal=True)
 
 if selected_random != "Seçiniz...":
-    st.session_state.random_recommendations = get_recommendations(selected_random)[['title', 'description']].values.tolist()
-    st.session_state.genre_recommendations = None
-    st.session_state.search_recommendations = None
-    st.session_state.genre_selected = None
+    if st.session_state.get("last_selected") != "random" or st.session_state.get("random_triggered") != selected_random:
+        st.session_state.random_recommendations = get_recommendations(selected_random)[['title', 'description']].values.tolist()
+        st.session_state.genre_recommendations = None
+        st.session_state.search_recommendations = None
+        st.session_state.genre_selected = None
+        st.session_state.user_input = ""
+        st.session_state.user_input_saved = ""
+        st.session_state.last_selected = "random"
+        st.session_state.random_triggered = selected_random
+        st.rerun()
 
-# --- 🔥 POPÜLER TÜR BUTONLARI ---
+# --- 🔥 POPÜLER TÜR ÖNERİSİ ---
 st.subheader("🔥 Popüler Türlere Göre İçerikler")
 genres = [g.strip() for sublist in df['listed_in'].str.split(',') for g in sublist]
 top_genres = [g for g, _ in Counter(genres).most_common(6)]
@@ -70,23 +77,30 @@ genre_col1, genre_col2, genre_col3 = st.columns(3)
 for i, genre in enumerate(top_genres):
     with [genre_col1, genre_col2, genre_col3][i % 3]:
         if st.button(f"🎈 {genre}", key=f"genre_{genre}"):
-            genre_df = df[df['listed_in'].str.contains(genre, case=False, na=False)].sample(5)
-            st.session_state.genre_recommendations = genre_df[['title', 'description']].values.tolist()
+            st.session_state.genre_recommendations = df[df['listed_in'].str.contains(genre, case=False, na=False)].sample(5)[['title', 'description']].values.tolist()
             st.session_state.genre_selected = genre
             st.session_state.search_recommendations = None
             st.session_state.random_recommendations = None
+            st.session_state.user_input = ""
+            st.session_state.user_input_saved = ""
+            st.session_state.last_selected = "genre"
+            st.rerun()
 
-# --- 🔎 FİLM/DİZİ ADIYLA ARAMA ---
+# --- 🔎 BAŞLIKLA ARAMA ---
 st.subheader("🔎 Film/Dizi Adı ile Öneri Al")
-user_input = st.text_input("İçerik başlığını girin (örneğin: Narcos):")
+user_input = st.text_input("İçerik başlığını girin:", value=st.session_state.get("user_input", ""))
 
-if user_input:
+if user_input and user_input != st.session_state.get("user_input_saved", ""):
+    st.session_state.user_input = user_input
+    st.session_state.user_input_saved = user_input
+    st.session_state.random_recommendations = None
+    st.session_state.genre_recommendations = None
+    st.session_state.genre_selected = None
+    st.session_state.last_selected = "search"
+
     if user_input in titles:
-        results = get_recommendations(user_input)
-        st.session_state.search_recommendations = results[['title', 'description']].values.tolist()
-        st.session_state.genre_recommendations = None
-        st.session_state.random_recommendations = None
-        st.session_state.genre_selected = None
+        st.session_state.search_recommendations = get_recommendations(user_input)[['title', 'description']].values.tolist()
+        st.rerun()
     else:
         st.session_state.search_recommendations = None
         close_matches = get_close_matches(user_input, titles, n=5, cutoff=0.5)
